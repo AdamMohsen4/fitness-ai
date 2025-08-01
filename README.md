@@ -1,14 +1,21 @@
-# Step AI - Smart Pedometer App 👋
+# Smart(er) Pedometer App 
 
-A modern, AI-powered step counter app built with React Native and Expo. Track your daily steps with a beautiful, intuitive interface.
+An "AI-powered"🙄(I know...) step counter app built with React Native and Expo. The thought is to have a "narrative" llm integration that retroactively (or in real-time) provides fun facts based on route coordinates.
 
 ## Features
 
-- 📱 Real-time step counting using device sensors
-- 🎯 Daily goal tracking with visual progress
-- 📊 Statistics dashboard (calories, distance, time)
-- 🎨 Beautiful, modern UI with smooth animations
-- 🏆 Goal achievement celebrations
+- Real-time step counting using device sensors
+- Daily goal tracking with visual progress
+- Statistics dashboard (calories, distance, time)
+- Subjectively good looking UI
+- Goal achievement celebrations
+
+## Requirements
+
+- Store user data and provide seemingly customized workout recommendations based on parameters like weight, acivity level, age, etc
+- Wrap feature with LLM (motivational speaker, guide, or some other fun thing)
+- Accururate data and fast retrievals 
+- Offline tracking functionality and syncing when connected to network again
 
 ## Get started
 
@@ -23,35 +30,3 @@ A modern, AI-powered step counter app built with React Native and Expo. Track yo
    ```bash
    npx expo start
    ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Tech Stack
-
-- React Native
-- Expo
-- React Native Reanimated
-- React Native SVG
-- Expo Sensors (Pedometer)
-- TypeScript
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
