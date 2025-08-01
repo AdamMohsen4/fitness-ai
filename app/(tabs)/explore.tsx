@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { Platform, StyleSheet } from 'react-native';
 
 import { Collapsible } from '@/components/Collapsible';
@@ -50,7 +49,9 @@ export default function TabTwoScreen() {
           <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
           different screen densities
         </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
+        <ThemedView style={{ alignSelf: 'center', padding: 20, backgroundColor: '#f0f0f0', borderRadius: 10, margin: 10 }}>
+          <ThemedText style={{ textAlign: 'center' }}>📱 Step AI Logo</ThemedText>
+        </ThemedView>
         <ExternalLink href="https://reactnative.dev/docs/images">
           <ThemedText type="link">Learn more</ThemedText>
         </ExternalLink>

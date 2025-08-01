@@ -7,7 +7,6 @@ import Animated, {
   useAnimatedStyle, 
   withSpring,
   withTiming,
-  interpolate,
   Easing
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
