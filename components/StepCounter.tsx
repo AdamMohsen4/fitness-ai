@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
-import { Pedometer } from 'expo-sensors';
+import { Pedometer, DeviceMotion } from 'expo-sensors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import Animated, { 
@@ -38,6 +38,7 @@ function CircularProgress({ progress, size = 200 }: { progress: number; size?: n
   }, [progress]);
 
   return (
+    // Progress Circle
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size} style={StyleSheet.absoluteFillObject}>
         <Defs>
@@ -52,14 +53,7 @@ function CircularProgress({ progress, size = 200 }: { progress: number; size?: n
           </SvgGradient>
         </Defs>
         {/* Background Circle */}
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="url(#backgroundGradient)"
-          strokeWidth="12"
-          fill="transparent"
-        />
+       
         {/* Progress Circle */}
         <Circle
           cx={size / 2}
@@ -90,15 +84,19 @@ function WeeklyProgress() {
     { day: 'Today', date: '22', completed: true },
   ];
 
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const toggleExpanded = () => {
+    setIsExpanded(!isExpanded);
+  };
+
   return (
     <View style={styles.weeklyProgressContainer}>
-      <View style={styles.weeklyHeader}>
-        <Text style={styles.weeklyTitle}>Your Progress</Text>
-        <TouchableOpacity style={styles.weekSelector}>
-          <Text style={styles.weekSelectorText}>This Week</Text>
-          <Ionicons name="chevron-down" size={16} color="#6366f1" />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={styles.weekSelector} onPress={toggleExpanded}>
+        <Text style={styles.weekSelectorText}>This Week</Text>
+        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color="#6366f1" />
+      </TouchableOpacity>
+      
       <View style={styles.weeklyDays}>
         {days.map((item, index) => (
           <View key={index} style={styles.dayContainer}>
@@ -123,9 +121,17 @@ function WeeklyProgress() {
 
 export function StepCounter() {
   const [isPedometerAvailable, setIsPedometerAvailable] = useState<string>('checking');
-  const [currentStepCount, setCurrentStepCount] = useState<number>(4805);
+  const [currentStepCount, setCurrentStepCount] = useState<number>(0);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
+  const [useMotionFallback, setUseMotionFallback] = useState<boolean>(false);
+  const [motionData, setMotionData] = useState<{
+    acceleration: number;
+    isDetecting: boolean;
+  }>({
+    acceleration: 0,
+    isDetecting: false,
+  });
   const progress = getProgress(currentStepCount);
   
   const scaleValue = useSharedValue(0);
@@ -148,30 +154,99 @@ export function StepCounter() {
   }, []);
 
   useEffect(() => {
-    Pedometer.isAvailableAsync().then(
-      (result: boolean) => setIsPedometerAvailable(result ? 'yes' : 'no'),
-      () => setIsPedometerAvailable('no')
-    );
+    console.log('=== STARTING MOTION STEP COUNTING ===');
+    
+    // Enable motion detection immediately
+    setUseMotionFallback(true);
+    
+    // Check pedometer availability for info only
+    Pedometer.isAvailableAsync().then(available => {
+      console.log('Pedometer available:', available);
+      setIsPedometerAvailable(available ? 'yes' : 'no');
+    }).catch(error => {
+      console.log('Pedometer check failed:', error);
+      setIsPedometerAvailable('no');
+    });
   }, []);
+
+  // Enhanced motion-based step counting
+  useEffect(() => {
+    if (useMotionFallback) {
+      let motionSubscription: any = null;
+      let stepCount = 0;
+      let lastStepTime = 0;
+      let lastAcceleration = 0;
+      let stepThreshold = 1.2; // Even lower threshold for better sensitivity
+      let consecutiveSteps = 0;
+
+      const startMotionCounting = async () => {
+        try {
+          console.log('Starting motion step counting...');
+          motionSubscription = DeviceMotion.addListener((motion) => {
+            if (!motion.acceleration) {
+              return;
+            }
+            
+            const now = Date.now();
+            const acceleration = Math.sqrt(
+              motion.acceleration.x ** 2 + 
+              motion.acceleration.y ** 2 + 
+              motion.acceleration.z ** 2
+            );
+            
+            // Update motion data for debugging
+            setMotionData({
+              acceleration,
+              isDetecting: true,
+            });
+            
+            // Step detection
+            const timeSinceLastStep = now - lastStepTime;
+            const accelerationChange = Math.abs(acceleration - lastAcceleration);
+            
+            // Detect step
+            if (accelerationChange > stepThreshold && timeSinceLastStep > 300 && acceleration > 1.0) {
+              stepCount++;
+              lastStepTime = now;
+              
+              console.log('Step detected! Total:', stepCount, 'Acceleration:', acceleration.toFixed(2));
+              setCurrentStepCount(stepCount);
+            }
+            
+            lastAcceleration = acceleration;
+          });
+          
+          console.log('Motion detection active - start walking!');
+        } catch (error) {
+          console.error('Error starting motion counting:', error);
+        }
+      };
+
+      startMotionCounting();
+
+      return () => {
+        if (motionSubscription) { 
+          console.log('Cleaning up motion subscription');
+          motionSubscription.remove();
+        }
+      };
+    }
+    
+  }, [useMotionFallback]);
 
   // Request location permissions and get user location
   useEffect(() => {
     const requestLocationPermission = async () => {
       try {
-        console.log('Requesting location permission...');
         const { status } = await Location.requestForegroundPermissionsAsync();
-        console.log('Location permission status:', status);
-        
+
         if (status === 'granted') {
           setLocationPermission(true);
-          console.log('Getting current position...');
           const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.High,
           });
-          console.log('Location obtained:', location.coords);
           setUserLocation(location);
         } else {
-          console.log('Location permission denied');
           Alert.alert(
             'Location Permission Required',
             'This app needs location access to show your position on the map.',
@@ -191,33 +266,33 @@ export function StepCounter() {
     requestLocationPermission();
   }, []);
 
-  const gestureHandler = useAnimatedGestureHandler({
-    onStart: (_, context: any) => {
-      context.startY = translateY.value;
-    },
-    onActive: (event, context: any) => {
-      const newTranslateY = context.startY + event.translationY;
-      translateY.value = Math.max(0, Math.min(newTranslateY, height * 0.4));
+  // const gestureHandler = useAnimatedGestureHandler({
+  //   onStart: (_, context: any) => {
+  //     context.startY = translateY.value;
+  //   },
+  //   onActive: (event, context: any) => {
+  //     const newTranslateY = context.startY + event.translationY;
+  //     translateY.value = Math.max(0, Math.min(newTranslateY, height * 0.4));
       
-      // Update map position
-      const mapProgress = interpolate(
-        translateY.value,
-        [0, height * 0.4],
-        [-height * 0.4, 0],
-        Extrapolate.CLAMP
-      );
-      mapTranslateY.value = mapProgress;
-    },
-    onEnd: () => {
-      if (translateY.value > height * 0.2) {
-        translateY.value = withSpring(height * 0.4, { damping: 20, stiffness: 100 });
-        mapTranslateY.value = withSpring(0, { damping: 20, stiffness: 100 });
-      } else {
-        translateY.value = withSpring(0, { damping: 20, stiffness: 100 });
-        mapTranslateY.value = withSpring(-height * 0.4, { damping: 20, stiffness: 100 });
-      }
-    },
-  });
+  //     // Update map position
+  //     const mapProgress = interpolate(
+  //       translateY.value,
+  //       [0, height * 0.4],
+  //       [-height * 0.4, 0],
+  //       Extrapolate.CLAMP
+  //     );
+  //     mapTranslateY.value = mapProgress;
+  //   },
+  //   onEnd: () => {
+  //     if (translateY.value > height * 0.2) {
+  //       translateY.value = withSpring(height * 0.4, { damping: 20, stiffness: 100 });
+  //       mapTranslateY.value = withSpring(0, { damping: 20, stiffness: 100 });
+  //     } else {
+  //       translateY.value = withSpring(0, { damping: 20, stiffness: 100 });
+  //       mapTranslateY.value = withSpring(-height * 0.4, { damping: 10, stiffness: 100 });
+  //     }
+  //   },
+  // });
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scaleValue.value }],
@@ -245,7 +320,7 @@ export function StepCounter() {
         <View style={styles.headerLeft}>
           <Ionicons name="footsteps" size={24} color="#6366f1" />
         </View>
-        <Text style={styles.headerTitle}>Home</Text>
+     
         <TouchableOpacity style={styles.menuButton}>
           <Ionicons name="ellipsis-vertical" size={24} color="#1f2937" />
         </TouchableOpacity>
@@ -280,15 +355,15 @@ export function StepCounter() {
         )}
       </Animated.View>
 
-      {/* Main Content */}
-      <PanGestureHandler onGestureEvent={gestureHandler}>
+      {/* Main Content */}   
         <Animated.View style={[styles.mainContent, animatedMainStyle]}>
-          <View style={styles.pullIndicator}>
-            <View style={styles.pullBar} />
-            <Text style={styles.pullText}>Pull down to see map</Text>
-          </View>
+          {/* <View style={styles.pullIndicator}> */}
+            {/* <View style={styles.pullBar} />
+            <Text style={styles.pullText}>Pull down to see map</Text> */}
+          {/* </View> */}
 
           <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
             {/* Step Counter Card */}
             <Animated.View style={[styles.stepCard, animatedContainerStyle]}>
               <View style={styles.progressContainer}>
@@ -297,9 +372,9 @@ export function StepCounter() {
                   <Text style={styles.stepsLabel}>Steps</Text>
                   <Text style={styles.steps}>{currentStepCount.toLocaleString()}</Text>
                   <Text style={styles.goal}>/{DAILY_GOAL.toLocaleString()}</Text>
-                  <TouchableOpacity style={styles.playButton}>
+                  {/* <TouchableOpacity style={styles.playButton}>
                     <Ionicons name="pause" size={16} color="white" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
               </View>
             </Animated.View>
@@ -334,7 +409,7 @@ export function StepCounter() {
 
           </ScrollView>
         </Animated.View>
-      </PanGestureHandler>
+
     </View>
   );
 }
@@ -342,44 +417,42 @@ export function StepCounter() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f8f9fa',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: 60,
     paddingBottom: 20,
-    backgroundColor: '#f1f5f9',
-    zIndex: 3,
+    backgroundColor: '#fff',
+    zIndex: 1000,
   },
   headerLeft: {
-    width: 40,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1f2937',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   menuButton: {
-    width: 40,
-    alignItems: 'flex-end',
+    padding: 8,
   },
   mapContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: height,
+    height: height * 0.4,
     zIndex: 1,
   },
   map: {
     flex: 1,
   },
   mainContent: {
+    marginTop: 20,
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f8f9fa',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     zIndex: 2,
   },
   pullIndicator: {
@@ -403,11 +476,47 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
+  debugCard: {
+    marginTop: 20,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  testButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  testButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   stepCard: {
     backgroundColor: 'white',
     borderRadius: 20,
     padding: 24,
-    marginBottom: 16,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -417,7 +526,6 @@ const styles = StyleSheet.create({
   progressContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
   },
   centerContent: {
     position: 'absolute',
@@ -425,83 +533,79 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepsLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  steps: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  goal: {
     fontSize: 16,
     color: '#6b7280',
     fontWeight: '500',
-    marginBottom: 16,
+    marginBottom: 4,
+  },
+  steps: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#1f2937',
+    lineHeight: 40,
+  },
+  goal: {
+    fontSize: 18,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   playButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#6366f1',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 12,
   },
   statsCard: {
     backgroundColor: 'white',
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    marginBottom: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   statItem: {
-    flex: 1,
     alignItems: 'center',
+    flex: 1,
   },
   statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1f2937',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   statLabel: {
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
+    textTransform: 'uppercase',
   },
   weeklyProgressContainer: {
     backgroundColor: 'white',
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  weeklyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  weeklyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f2937',
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   weekSelector: {
     flexDirection: 'row',
@@ -600,4 +704,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
