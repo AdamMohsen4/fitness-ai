@@ -1,4 +1,5 @@
-import { Platform, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Platform, StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { Collapsible } from '@/components/Collapsible';
 import { ExternalLink } from '@/components/ExternalLink';
@@ -8,6 +9,8 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Ionicons } from '@expo/vector-icons';
 import { FontAwesome6 } from '@expo/vector-icons';
+import { PanGestureHandler, PanGestureHandlerGestureEvent, State } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue, useAnimatedGestureHandler, useAnimatedStyle, withSpring, withTiming, interpolate, Extrapolate } from 'react-native-reanimated';
 
 import MapView from 'react-native-maps';
 import { useEffect, useState } from 'react';
@@ -24,10 +27,21 @@ export default function TabTwoScreen() {
     calories: 0,
     distance: 0.0
   });
+  
+  const screenHeight = Dimensions.get('window').height;
+  const cardHeight = 280;
+  const translateY = useSharedValue(0);
+  const context = useSharedValue(0);
 
   useEffect(() => {
     getLocation();
   }, []);
+
+  useEffect(() => {
+    if (!isSessionActive) {
+      translateY.value = 0;
+    }
+  }, [isSessionActive]);
 
   const getLocation = async () => {
     try {
@@ -57,6 +71,8 @@ export default function TabTwoScreen() {
   };
 
   const stopSession = () => {
+    // Reset the animation value before changing state
+    translateY.value = 0;
     setIsSessionActive(false);
     setSessionData({
       steps: 0,
@@ -81,6 +97,69 @@ export default function TabTwoScreen() {
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
   } : defaultRegion;
+
+  const gestureHandler = useAnimatedGestureHandler({
+    onStart: (_, ctx: any) => {
+      ctx.startY = translateY.value;
+    },
+    onActive: (event, ctx: any) => {
+      try {
+        const newTranslateY = ctx.startY + event.translationY;
+        translateY.value = Math.max(0, newTranslateY);
+      } catch (error) {
+        // Reset to safe state if error occurs
+        translateY.value = 0;
+      }
+    },
+    onEnd: (event) => {
+      try {
+        const shouldDismiss = event.translationY > 100 || (event.translationY > 50 && event.velocityY > 800);
+        
+        if (shouldDismiss) {
+          translateY.value = withTiming(cardHeight, {
+            duration: 300,
+          }, (finished) => {
+            if (finished) {
+              runOnJS(setIsSessionActive)(false);
+            }
+          });
+        } else {
+          translateY.value = withSpring(0, {
+            damping: 20,
+            stiffness: 200,
+          });
+        }
+      } catch (error) {
+        // Reset to safe state if error occurs
+        translateY.value = 0;
+      }
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateY.value,
+      [0, cardHeight / 2],
+      [1, 0.8],
+      Extrapolate.CLAMP
+    );
+
+    const scale = interpolate(
+      translateY.value,
+      [0, cardHeight / 2],
+      [1, 0.95],
+      Extrapolate.CLAMP
+    );
+
+    return {
+      transform: [
+        { translateY: translateY.value },
+        { scale: scale }
+      ],
+      opacity: opacity,
+    };
+  });
+
 
   return (
     <View style={styles.container}>
@@ -109,10 +188,23 @@ export default function TabTwoScreen() {
           <TouchableOpacity style={styles.startButton} onPress={startSession}>
             <Text style={styles.startButtonText}>Start Session</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={styles.fitnessCard}>
+                ) : (
+          <Animated.View 
+            style={[
+              styles.fitnessCard,
+              animatedStyle
+            ]}
+          >
             {/* Pull handle */}
-            <View style={styles.pullHandle} />
+            <PanGestureHandler 
+              onGestureEvent={gestureHandler}
+              activeOffsetY={[-10, 10]}
+              failOffsetX={[-50, 50]}
+            >
+              <Animated.View style={styles.pullHandle}>
+                <View style={{ width: 30, height: 4, backgroundColor: '#d1d5db', borderRadius: 2 }} />
+              </Animated.View>
+            </PanGestureHandler>
             
             {/* Metrics Section */}
             <View style={styles.metricsContainer}>
@@ -153,7 +245,7 @@ export default function TabTwoScreen() {
             <TouchableOpacity style={styles.stopButton} onPress={stopSession}>
               <Text style={styles.stopButtonText}>Stop</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         )}
       </View>
     
@@ -242,12 +334,22 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   pullHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 2,
+    width: 60,
+    height: 30,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 15,
     alignSelf: 'center',
     marginBottom: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   metricsContainer: {
     flexDirection: 'row',
@@ -271,7 +373,7 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
   },
   stopButton: {
-    backgroundColor: '#e9d5ff',
+    backgroundColor: '#e9d5fe',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,
