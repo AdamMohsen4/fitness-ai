@@ -1,31 +1,40 @@
-// Fallback for using MaterialIcons on Android and web.
+// Lucide React Native icons - modern, consistent icon library used by Notion, Linear, GitHub
 
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
-import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
+import { OpaqueColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
-type IconSymbolName = keyof typeof MAPPING;
+// Import the specific icons we need
+import { House, Send, Code, ChevronRight, Map, Flame, Activity } from 'lucide-react-native';
+
+type IconMapping = {
+  'house.fill': typeof House;
+  'paperplane.fill': typeof Send;
+  'chevron.left.forwardslash.chevron.right': typeof Code;
+  'chevron.right': typeof ChevronRight;
+  'map.fill': typeof Map;
+  'flame.fill': typeof Flame;
+  'run.fill': typeof Activity;
+};
+
+type IconSymbolName = keyof IconMapping;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ * Lucide icon mappings for SF Symbol names.
+ * Lucide icons are modern, consistent, and used by Notion, Linear, GitHub.
  */
-const MAPPING = {
-  'house.fill': 'home',
-  'paperplane.fill': 'send',
-  'chevron.left.forwardslash.chevron.right': 'code',
-  'chevron.right': 'chevron-right',
-  'map.fill': 'map',
-  'flame.fill': 'local-fire-department',
-} as IconMapping;
+const MAPPING: IconMapping = {
+  'house.fill': House,
+  'paperplane.fill': Send,
+  'chevron.left.forwardslash.chevron.right': Code,
+  'chevron.right': ChevronRight,
+  'map.fill': Map,
+  'flame.fill': Flame,
+  'run.fill': Activity,
+};
 
 /**
- * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
+ * An icon component that uses Lucide React Native icons.
+ * These are modern, consistent icons used by Notion, Linear, GitHub, and other top apps.
  */
 export function IconSymbol({
   name,
@@ -36,8 +45,16 @@ export function IconSymbol({
   name: IconSymbolName;
   size?: number;
   color: string | OpaqueColorValue;
-  style?: StyleProp<TextStyle>;
-  weight?: SymbolWeight;
+  style?: StyleProp<ViewStyle>;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  const LucideIconComponent = MAPPING[name];
+  
+  return (
+    <LucideIconComponent 
+      color={color} 
+      size={size} 
+      style={style}
+      strokeWidth={2}
+    />
+  );
 }

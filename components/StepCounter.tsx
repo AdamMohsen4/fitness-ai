@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, Alert, ScrollView, Linking } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import { Pedometer, DeviceMotion } from 'expo-sensors';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,8 +16,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import MapView, { Marker } from 'react-native-maps';
+import { Subscription } from 'expo-sensors/build/Pedometer';
 
-const DAILY_GOAL = 6000;
+const DAILY_GOAL = 10000;
 const { width, height } = Dimensions.get('window');
 
 function getProgress(steps: number) {
@@ -79,7 +80,7 @@ function WeeklyProgress() {
     { day: 'Tue', date: '17', completed: true },
     { day: 'Wed', date: '18', completed: false },
     { day: 'Thu', date: '19', completed: true },
-    { day: 'Fri', date: '20', completed: true },
+    { day: 'Fri', date: '20', completed: false },
     { day: 'Sat', date: '21', completed: true },
     { day: 'Today', date: '22', completed: true },
   ];
@@ -122,16 +123,10 @@ function WeeklyProgress() {
 export function StepCounter() {
   const [isPedometerAvailable, setIsPedometerAvailable] = useState<string>('checking');
   const [currentStepCount, setCurrentStepCount] = useState<number>(0);
+  const [todayStepCount, setTodayStepCount] = useState<number>(0);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
-  const [useMotionFallback, setUseMotionFallback] = useState<boolean>(false);
-  const [motionData, setMotionData] = useState<{
-    acceleration: number;
-    isDetecting: boolean;
-  }>({
-    acceleration: 0,
-    isDetecting: false,
-  });
+  
   const progress = getProgress(currentStepCount);
   
   const scaleValue = useSharedValue(0);
@@ -153,86 +148,122 @@ export function StepCounter() {
     pulseAnimation();
   }, []);
 
+  // Enhanced pedometer initialization
   useEffect(() => {
-    console.log('=== STARTING MOTION STEP COUNTING ===');
+    console.log('=== INITIALIZING PEDOMETER ===');
     
-    // Enable motion detection immediately
-    setUseMotionFallback(true);
-    
-    // Check pedometer availability for info only
-    Pedometer.isAvailableAsync().then(available => {
-      console.log('Pedometer available:', available);
-      setIsPedometerAvailable(available ? 'yes' : 'no');
-    }).catch(error => {
-      console.log('Pedometer check failed:', error);
-      setIsPedometerAvailable('no');
-    });
+    const initializePedometer = async () => {
+      try {
+        // Check if pedometer is available
+        const available = await Pedometer.isAvailableAsync();
+        console.log('Pedometer available:', available);
+        
+        if (!available) {
+          console.log('Pedometer not available on this device');
+          setIsPedometerAvailable('no');
+          return;
+        }
+
+        // Multiple permission request attempts for Samsung devices
+        console.log('Requesting pedometer permissions (attempt 1)...');
+        let { status } = await Pedometer.requestPermissionsAsync();
+        console.log('Pedometer permission status (attempt 1):', status);
+        
+        // If first attempt fails, try again after a delay
+        // if (status !== 'granted') {
+        //   console.log('First attempt failed, trying again...');
+        //   await new Promise(resolve => setTimeout(resolve, 1000));
+        //   const result = await Pedometer.requestPermissionsAsync();
+        //   status = result.status;
+        //   console.log('Pedometer permission status (attempt 2):', status);
+        // }
+        
+        // if (status !== 'granted') {
+        //   console.log('Pedometer permission denied after multiple attempts');
+        //   setIsPedometerAvailable('no');
+        //   Alert.alert(
+        //     'Fysisk aktivitet behörighet krävs',
+        //     'För att räkna steg behöver appen tillgång till "Fysisk aktivitet".\n\n1. Gå till Inställningar > Integritet > Behörighetshanterare > Fysisk aktivitet\n2. Hitta din app i listan och aktivera den\n3. Om appen inte syns, starta om appen och försök igen',
+        //     [
+        //       { text: 'Avbryt', style: 'cancel' },
+        //       { 
+        //         text: 'Öppna inställningar', 
+        //         onPress: () => {
+        //           Linking.openSettings().catch(() => {
+        //             console.log('Could not open settings');
+        //           });
+        //         }
+        //       },
+        //       {
+        //         text: 'Försök igen',
+        //         onPress: () => {
+        //           // Restart the initialization process
+        //           setIsPedometerAvailable('checking');
+        //           setTimeout(() => {
+        //             initializePedometer();
+        //           }, 500);
+        //         }
+        //       }
+        //     ]
+        //   );
+        //   return;
+        // }
+
+        console.log('Pedometer permissions granted, initializing...');
+        setIsPedometerAvailable('yes');
+        
+        // Get today's steps from start of day
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        
+        try {
+          const pastStepCountResult = await Pedometer.getStepCountAsync(start, end);
+          console.log('Past step count:', pastStepCountResult.steps);
+          setTodayStepCount(pastStepCountResult.steps);
+          setCurrentStepCount(pastStepCountResult.steps);
+        } catch (pastStepsError) {
+          console.log('Could not get past steps:', pastStepsError);
+          // Start from 0 if we can't get past steps
+          setTodayStepCount(0);
+          setCurrentStepCount(0);
+        }
+        
+      } catch (error) {
+        console.error('Pedometer initialization error:', error);
+        setIsPedometerAvailable('no');
+      }
+    };
+
+    initializePedometer();
   }, []);
 
-  // Enhanced motion-based step counting
+  // Pedometer step watching - only starts after permission is granted
   useEffect(() => {
-    if (useMotionFallback) {
-      let motionSubscription: any = null;
-      let stepCount = 0;
-      let lastStepTime = 0;
-      let lastAcceleration = 0;
-      let stepThreshold = 1.2; // Even lower threshold for better sensitivity
-      let consecutiveSteps = 0;
-
-      const startMotionCounting = async () => {
-        try {
-          console.log('Starting motion step counting...');
-          motionSubscription = DeviceMotion.addListener((motion) => {
-            if (!motion.acceleration) {
-              return;
-            }
-            
-            const now = Date.now();
-            const acceleration = Math.sqrt(
-              motion.acceleration.x ** 2 + 
-              motion.acceleration.y ** 2 + 
-              motion.acceleration.z ** 2
-            );
-            
-            // Update motion data for debugging
-            setMotionData({
-              acceleration,
-              isDetecting: true,
-            });
-            
-            // Step detection
-            const timeSinceLastStep = now - lastStepTime;
-            const accelerationChange = Math.abs(acceleration - lastAcceleration);
-            
-            // Detect step
-            if (accelerationChange > stepThreshold && timeSinceLastStep > 300 && acceleration > 1.0) {
-              stepCount++;
-              lastStepTime = now;
-              
-              console.log('Step detected! Total:', stepCount, 'Acceleration:', acceleration.toFixed(2));
-              setCurrentStepCount(stepCount);
-            }
-            
-            lastAcceleration = acceleration;
-          });
-          
-          console.log('Motion detection active - start walking!');
-        } catch (error) {
-          console.error('Error starting motion counting:', error);
-        }
-      };
-
-      startMotionCounting();
-
-      return () => {
-        if (motionSubscription) { 
-          console.log('Cleaning up motion subscription');
-          motionSubscription.remove();
-        }
-      };
+    let subscription: Subscription | null = null;
+  
+    if (isPedometerAvailable === 'yes') {
+      console.log('Starting step count watching...');
+      
+      try {
+        subscription = Pedometer.watchStepCount(result => {
+          console.log('Step count update:', result.steps);
+          setCurrentStepCount(todayStepCount + result.steps);
+        });
+        
+        console.log('Step counting active - start walking!');
+      } catch (error) {
+        console.error('Error starting step watching:', error);
+      }
     }
-    
-  }, [useMotionFallback]);
+  
+    return () => {
+      if (subscription) {
+        console.log('Cleaning up pedometer subscription');
+        subscription.remove();
+      }
+    };
+  }, [isPedometerAvailable, todayStepCount]);
 
   // Request location permissions and get user location
   useEffect(() => {
@@ -266,34 +297,6 @@ export function StepCounter() {
     requestLocationPermission();
   }, []);
 
-  // const gestureHandler = useAnimatedGestureHandler({
-  //   onStart: (_, context: any) => {
-  //     context.startY = translateY.value;
-  //   },
-  //   onActive: (event, context: any) => {
-  //     const newTranslateY = context.startY + event.translationY;
-  //     translateY.value = Math.max(0, Math.min(newTranslateY, height * 0.4));
-      
-  //     // Update map position
-  //     const mapProgress = interpolate(
-  //       translateY.value,
-  //       [0, height * 0.4],
-  //       [-height * 0.4, 0],
-  //       Extrapolate.CLAMP
-  //     );
-  //     mapTranslateY.value = mapProgress;
-  //   },
-  //   onEnd: () => {
-  //     if (translateY.value > height * 0.2) {
-  //       translateY.value = withSpring(height * 0.4, { damping: 20, stiffness: 100 });
-  //       mapTranslateY.value = withSpring(0, { damping: 20, stiffness: 100 });
-  //     } else {
-  //       translateY.value = withSpring(0, { damping: 20, stiffness: 100 });
-  //       mapTranslateY.value = withSpring(-height * 0.4, { damping: 10, stiffness: 100 });
-  //     }
-  //   },
-  // });
-
   const animatedContainerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scaleValue.value }],
     opacity: opacityValue.value,
@@ -320,6 +323,7 @@ export function StepCounter() {
         <View style={styles.headerLeft}>
           <Ionicons name="footsteps" size={24} color="#6366f1" />
         </View>
+        <Text style={styles.headerTitle}>Home</Text>
      
         <TouchableOpacity style={styles.menuButton}>
           <Ionicons name="ellipsis-vertical" size={24} color="#1f2937" />
@@ -356,59 +360,51 @@ export function StepCounter() {
       </Animated.View>
 
       {/* Main Content */}   
-        <Animated.View style={[styles.mainContent, animatedMainStyle]}>
-          {/* <View style={styles.pullIndicator}> */}
-            {/* <View style={styles.pullBar} />
-            <Text style={styles.pullText}>Pull down to see map</Text> */}
-          {/* </View> */}
-
-          <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-            {/* Step Counter Card */}
-            <Animated.View style={[styles.stepCard, animatedContainerStyle]}>
-              <View style={styles.progressContainer}>
-                <CircularProgress progress={progress} size={220} />
-                <View style={styles.centerContent}>
-                  <Text style={styles.stepsLabel}>Steps</Text>
-                  <Text style={styles.steps}>{currentStepCount.toLocaleString()}</Text>
-                  <Text style={styles.goal}>/{DAILY_GOAL.toLocaleString()}</Text>
-                  {/* <TouchableOpacity style={styles.playButton}>
-                    <Ionicons name="pause" size={16} color="white" />
-                  </TouchableOpacity> */}
-                </View>
-              </View>
-            </Animated.View>
-
-            {/* Daily Statistics */}
-            <View style={styles.statsCard}>
-              <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="time" size={24} color="#f59e0b" />
-                </View>
-                <Text style={styles.statValue}>1h 14m</Text>
-                <Text style={styles.statLabel}>time</Text>
-              </View>
-              <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="flame" size={24} color="#ef4444" />
-                </View>
-                <Text style={styles.statValue}>360</Text>
-                <Text style={styles.statLabel}>kcal</Text>
-              </View>
-              <View style={styles.statItem}>
-                <View style={styles.statIconContainer}>
-                  <Ionicons name="location" size={24} color="#10b981" />
-                </View>
-                <Text style={styles.statValue}>5.46</Text>
-                <Text style={styles.statLabel}>km</Text>
+      <Animated.View style={[styles.mainContent, animatedMainStyle]}>
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+          {/* Step Counter Card */}
+          <Animated.View style={[styles.stepCard, animatedContainerStyle]}>
+            <View style={styles.progressContainer}>
+              <CircularProgress progress={progress} size={220} />
+              <View style={styles.centerContent}>
+                <Text style={styles.stepsLabel}>Steps</Text>
+                <Text style={styles.steps}>{currentStepCount.toLocaleString()}</Text>
+                <Text style={styles.goal}>/{DAILY_GOAL.toLocaleString()}</Text>
               </View>
             </View>
+          </Animated.View>
 
-            {/* Weekly Progress */}
-            <WeeklyProgress />
+          {/* Daily Statistics */}
+          <View style={styles.statsCard}>
+            <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="time" size={24} color="#f59e0b" />
+              </View>
+              <Text style={styles.statValue}>1h 14m</Text>
+              <Text style={styles.statLabel}>time</Text>
+            </View>
+            <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="flame" size={24} color="#ef4444" />
+              </View>
+              <Text style={styles.statValue}>360</Text>
+              <Text style={styles.statLabel}>kcal</Text>
+            </View>
+            <View style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="location" size={24} color="#10b981" />
+              </View>
+              <Text style={styles.statValue}>5.46</Text>
+              <Text style={styles.statLabel}>km</Text>
+            </View>
+          </View>
 
-          </ScrollView>
-        </Animated.View>
+          {/* Weekly Progress */}
+          <WeeklyProgress />
+
+        </ScrollView>
+      </Animated.View>
 
     </View>
   );
@@ -417,7 +413,7 @@ export function StepCounter() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f8fafc',
   },
   header: {
     flexDirection: 'row',
@@ -428,6 +424,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     backgroundColor: '#fff',
     zIndex: 1000,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -455,73 +456,23 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     zIndex: 2,
   },
-  pullIndicator: {
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 10,
-  },
-  pullBar: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#d1d5db',
-    borderRadius: 2,
-    marginBottom: 8,
-  },
-  pullText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
   scrollContent: {
     flex: 1,
     paddingHorizontal: 20,
-  },
-  debugCard: {
-    marginTop: 20,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  debugTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  debugText: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 4,
-  },
-  testButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  testButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
+    paddingTop: 20,
   },
   stepCard: {
     backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    borderRadius: 32,
+    padding: 40,
+    marginBottom: 32,
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 32,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.08)',
   },
   progressContainer: {
     alignItems: 'center',
@@ -539,50 +490,46 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   steps: {
-    fontSize: 36,
-    fontWeight: '700',
+    fontSize: 48,
+    fontWeight: '800',
     color: '#1f2937',
-    lineHeight: 40,
+    lineHeight: 52,
+    letterSpacing: -1,
   },
   goal: {
     fontSize: 18,
     color: '#6b7280',
     fontWeight: '500',
   },
-  playButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#6366f1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-  },
   statsCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 24,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.06)',
   },
   statItem: {
     alignItems: 'center',
     flex: 1,
   },
   statIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f3f4f6',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.12)',
   },
   statValue: {
     fontSize: 20,
@@ -598,14 +545,16 @@ const styles = StyleSheet.create({
   },
   weeklyProgressContainer: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 24,
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.06)',
   },
   weekSelector: {
     flexDirection: 'row',
@@ -631,12 +580,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   dayCircleCompleted: {
     backgroundColor: '#6366f1',
@@ -660,32 +609,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
     fontWeight: '500',
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navText: {
-    fontSize: 12,
-    color: '#9ca3af',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  navTextActive: {
-    color: '#6366f1',
   },
   locationLoading: {
     position: 'absolute',
