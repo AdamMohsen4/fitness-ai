@@ -4,7 +4,7 @@ import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type ViewStyle } from 'react-native';
 
 // Import the specific icons we need
-import { House, Send, Code, ChevronRight, Map, Flame, Activity } from 'lucide-react-native';
+import { House, Send, Code, ChevronRight, Map, Flame, Dumbbell } from 'lucide-react-native';
 
 type IconMapping = {
   'house.fill': typeof House;
@@ -13,7 +13,7 @@ type IconMapping = {
   'chevron.right': typeof ChevronRight;
   'map.fill': typeof Map;
   'flame.fill': typeof Flame;
-  'run.fill': typeof Activity;
+  'dumbbell.fill': typeof Dumbbell;
 };
 
 type IconSymbolName = keyof IconMapping;
@@ -29,7 +29,7 @@ const MAPPING: IconMapping = {
   'chevron.right': ChevronRight,
   'map.fill': Map,
   'flame.fill': Flame,
-  'run.fill': Activity,
+  'dumbbell.fill': Dumbbell,
 };
 
 /**

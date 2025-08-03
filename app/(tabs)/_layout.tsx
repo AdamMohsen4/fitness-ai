@@ -47,7 +47,7 @@ export default function TabLayout() {
         options={{
           tabBarStyle: styles.tabBar,
           title: 'Session',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="run.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="dumbbell.fill" color={color} />,
         }}
       />
     </Tabs>
