@@ -1,3 +1,4 @@
+import React from 'react';
 import { Platform, StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
 import Animated from 'react-native-reanimated';
 
@@ -21,6 +22,7 @@ export default function TabTwoScreen() {
   const [location, setLocation] = useState<any>(null);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [isSessionActive, setIsSessionActive] = useState<boolean>(false);
+  const [showMetrics, setShowMetrics] = useState<boolean>(true);
   const [sessionData, setSessionData] = useState({
     steps: 0,
     time: '0h 0m',
@@ -32,6 +34,7 @@ export default function TabTwoScreen() {
   const cardHeight = 280;
   const translateY = useSharedValue(0);
   const context = useSharedValue(0);
+  const [isDragged, setIsDragged] = useState<boolean>(false);
 
   useEffect(() => {
     getLocation();
@@ -42,6 +45,10 @@ export default function TabTwoScreen() {
       translateY.value = 0;
     }
   }, [isSessionActive]);
+
+  useEffect(() => {
+  
+  }, [showMetrics, isDragged]);
 
   const getLocation = async () => {
     try {
@@ -61,6 +68,7 @@ export default function TabTwoScreen() {
 
   const startSession = () => {
     setIsSessionActive(true);
+    setShowMetrics(true);
     // Initialize session data with mock values (in real app, these would be tracked)
     setSessionData({
       steps: 4805,
@@ -74,6 +82,7 @@ export default function TabTwoScreen() {
     // Reset the animation value before changing state
     translateY.value = 0;
     setIsSessionActive(false);
+    setShowMetrics(true);
     setSessionData({
       steps: 0,
       time: '0h 0m',
@@ -81,6 +90,21 @@ export default function TabTwoScreen() {
       distance: 0.0
     });
   };
+
+
+       const PullHandle = () => {  
+     return (
+       <PanGestureHandler 
+         onGestureEvent={gestureHandler}
+         activeOffsetY={[-10, 10]}
+         failOffsetX={[-50, 50]}
+       >
+         <Animated.View style={styles.pullHandle}>
+           <View style={{ width: 30, height: 4, backgroundColor: '#d1d5db', borderRadius: 2 }} />
+         </Animated.View>
+       </PanGestureHandler>
+     )
+   } 
 
   // Default coordinates (San Francisco) if location is not available
   const defaultRegion = {
@@ -98,65 +122,48 @@ export default function TabTwoScreen() {
     longitudeDelta: 0.01,
   } : defaultRegion;
 
-  const gestureHandler = useAnimatedGestureHandler({
+      const gestureHandler = useAnimatedGestureHandler({
     onStart: (_, ctx: any) => {
       ctx.startY = translateY.value;
     },
     onActive: (event, ctx: any) => {
-      try {
-        const newTranslateY = ctx.startY + event.translationY;
-        translateY.value = Math.max(0, newTranslateY);
-      } catch (error) {
-        // Reset to safe state if error occurs
-        translateY.value = 0;
-      }
+      // Simple finger following - only allow downward movement
+      const newTranslateY = ctx.startY + event.translationY;
+      translateY.value = Math.max(0, newTranslateY);
     },
     onEnd: (event) => {
-      try {
-        const shouldDismiss = event.translationY > 100 || (event.translationY > 50 && event.velocityY > 800);
-        
-        if (shouldDismiss) {
-          translateY.value = withTiming(cardHeight, {
-            duration: 300,
-          }, (finished) => {
-            if (finished) {
-              runOnJS(setIsSessionActive)(false);
-            }
-          });
-        } else {
-          translateY.value = withSpring(0, {
-            damping: 20,
-            stiffness: 200,
-          });
+      const translation = event.translationY;
+      const velocity = event.velocityY;
+      
+      // Smooth dismissal: if dragged down with enough distance or velocity
+      if (translation > 40 || (translation > 20 && velocity > 300)) {
+        // Continue the natural movement to dismiss
+        translateY.value = withTiming(200, {
+          duration: 100,
+        }, (finished) => {
+          if (finished) {
+            runOnJS(setShowMetrics)(false);
+            runOnJS(setIsDragged)(true);
+          }
+        });
+      } else {
+        // Smoothly return to original position
+        translateY.value = withTiming(0, {
+          duration: 150,
+        });
+        if (!showMetrics) {
+          runOnJS(setShowMetrics)(true);
         }
-      } catch (error) {
-        // Reset to safe state if error occurs
-        translateY.value = 0;
+        runOnJS(setIsDragged)(false);
       }
     },
   });
 
   const animatedStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      translateY.value,
-      [0, cardHeight / 2],
-      [1, 0.8],
-      Extrapolate.CLAMP
-    );
-
-    const scale = interpolate(
-      translateY.value,
-      [0, cardHeight / 2],
-      [1, 0.95],
-      Extrapolate.CLAMP
-    );
-
     return {
       transform: [
-        { translateY: translateY.value },
-        { scale: scale }
+        { translateY: translateY.value }
       ],
-      opacity: opacity,
     };
   });
 
@@ -195,56 +202,68 @@ export default function TabTwoScreen() {
               animatedStyle
             ]}
           >
-            {/* Pull handle */}
-            <PanGestureHandler 
-              onGestureEvent={gestureHandler}
-              activeOffsetY={[-10, 10]}
-              failOffsetX={[-50, 50]}
-            >
-              <Animated.View style={styles.pullHandle}>
-                <View style={{ width: 30, height: 4, backgroundColor: '#d1d5db', borderRadius: 2 }} />
-              </Animated.View>
-            </PanGestureHandler>
+            {/* Pull handle - always visible */}
+            <PullHandle />
             
-            {/* Metrics Section */}
-            <View style={styles.metricsContainer}>
-              <View style={styles.metricColumn}>
-                <View style={[styles.iconContainer, { backgroundColor: '#dbeafe' }]}>
-                  <FontAwesome6 name="person-running" size={20} color="#1d4ed8" />
+            {/* Metrics Section - conditionally visible */}
+            {showMetrics && (
+              <>
+                <View style={styles.metricsContainer}>
+                  <View style={styles.metricColumn}>
+                    <View style={[styles.iconContainer, { backgroundColor: '#dbeafe' }]}>
+                      <FontAwesome6 name="person-running" size={20} color="#1d4ed8" />
+                    </View>
+                    <Text style={styles.metricValue}>{sessionData.steps.toLocaleString()}</Text>
+                    <Text style={styles.metricLabel}>steps</Text>
+                  </View>
+                  
+                  <View style={styles.metricColumn}>
+                    <View style={[styles.iconContainer, { backgroundColor: '#fed7aa' }]}>
+                      <FontAwesome6 name="clock" size={20} color="#ea580c" />
+                    </View>
+                    <Text style={styles.metricValue}>{sessionData.time}</Text>
+                    <Text style={styles.metricLabel}>time</Text>
+                  </View>
+                  
+                  <View style={styles.metricColumn}>
+                    <View style={[styles.iconContainer, { backgroundColor: '#fecaca' }]}>
+                      <FontAwesome6 name="fire" size={20} color="#dc2626" />
+                    </View>
+                    <Text style={styles.metricValue}>{sessionData.calories}</Text>
+                    <Text style={styles.metricLabel}>kcal</Text>
+                  </View>
+                  
+                  <View style={styles.metricColumn}>
+                    <View style={[styles.iconContainer, { backgroundColor: '#bbf7d0' }]}>
+                      <FontAwesome6 name="location-dot" size={20} color="#16a34a" />
+                    </View>
+                    <Text style={styles.metricValue}>{sessionData.distance}</Text>
+                    <Text style={styles.metricLabel}>km</Text>
+                  </View>
                 </View>
-                <Text style={styles.metricValue}>{sessionData.steps.toLocaleString()}</Text>
-                <Text style={styles.metricLabel}>steps</Text>
-              </View>
-              
-              <View style={styles.metricColumn}>
-                <View style={[styles.iconContainer, { backgroundColor: '#fed7aa' }]}>
-                  <FontAwesome6 name="clock" size={20} color="#ea580c" />
-                </View>
-                <Text style={styles.metricValue}>{sessionData.time}</Text>
-                <Text style={styles.metricLabel}>time</Text>
-              </View>
-              
-              <View style={styles.metricColumn}>
-                <View style={[styles.iconContainer, { backgroundColor: '#fecaca' }]}>
-                  <FontAwesome6 name="fire" size={20} color="#dc2626" />
-                </View>
-                <Text style={styles.metricValue}>{sessionData.calories}</Text>
-                <Text style={styles.metricLabel}>kcal</Text>
-              </View>
-              
-              <View style={styles.metricColumn}>
-                <View style={[styles.iconContainer, { backgroundColor: '#bbf7d0' }]}>
-                  <FontAwesome6 name="location-dot" size={20} color="#16a34a" />
-                </View>
-                <Text style={styles.metricValue}>{sessionData.distance}</Text>
-                <Text style={styles.metricLabel}>km</Text>
-              </View>
-            </View>
+                
+                {/* Stop Button */}
+                <TouchableOpacity style={styles.stopButton} onPress={stopSession}>
+                  <Text style={styles.stopButtonText}>Stop</Text>
+                </TouchableOpacity>
+              </>
+            )}
             
-            {/* Stop Button */}
-            <TouchableOpacity style={styles.stopButton} onPress={stopSession}>
-              <Text style={styles.stopButtonText}>Stop</Text>
-            </TouchableOpacity>
+            {/* Show Metrics button - appears when metrics are hidden */}
+            {!showMetrics && (
+              <TouchableOpacity 
+                style={styles.showMetricsButton} 
+                onPress={() => {
+                  console.log('Show Metrics button pressed');
+                  setShowMetrics(true);
+                  setIsDragged(false);
+                }}
+              >
+              
+              </TouchableOpacity>
+            )}
+
+           
           </Animated.View>
         )}
       </View>
@@ -392,5 +411,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  pullHandleContainer: {
+    position: 'absolute',
+    bottom: 280,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    alignItems: 'center',
+  },
+  fixedPullHandle: {
+    position: 'absolute',
+    bottom: 280,
+    left: 0,
+    right: 0,
+    zIndex: 1001,
+    alignItems: 'center',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingTop: 20,
+  },
+  draggingIndicator: {
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 1001,
+    alignItems: 'center',
+  },
+  showMetricsButton: {
+ 
+
+   
+   
+    alignSelf: 'center',
+    marginTop: 140,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+  },
+  showMetricsButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
 });
