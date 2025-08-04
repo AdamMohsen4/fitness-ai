@@ -1,7 +1,7 @@
 # Smart(er) Pedometer App 
+## 2025-08-05 NOTE: This project is currently put on hold.
 
 An "AI-powered"🙄(I know...) step counter app built with React Native and Expo. The thought is to have a "narrative" llm integration that retroactively (or in real-time) provides fun facts based on route coordinates.
-
 ## Features
 
 - Real-time step counting using device sensors
